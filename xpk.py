@@ -1853,7 +1853,6 @@ def create_node_labels(args, system) -> str:
     """.format(gke_accelerator=system.gke_accelerator, topology=system.topology)
   elif args.device_type in GpuUserFacingNameToSystemCharacteristics:
     return """cloud.google.com/gke-accelerator: {gke_accelerator}
-    cloud.google.com/gce-machine-type: {gce_machine_type}
     """.format(gke_accelerator=system.gke_accelerator, gce_machine_type=system.gce_machine_type)
   else:
     raise ValueError("Unknown device type")
@@ -1866,7 +1865,6 @@ def create_node_selector(args, system) -> str:
     """.format(gke_accelerator=system.gke_accelerator, topology=system.topology)
   elif args.device_type in GpuUserFacingNameToSystemCharacteristics:
     return """cloud.google.com/gke-accelerator: {gke_accelerator}
-                cloud.google.com/gce-machine-type: {gce_machine_type}
     """.format(gke_accelerator=system.gke_accelerator,
                gce_machine_type=system.gce_machine_type)
   else:
@@ -1933,6 +1931,8 @@ def workload_create(args) -> int:
                                            command=command,
                                            node_selector=create_node_selector(args, system),
                                            resource_type=get_resource_type(args))
+  print('*'*3 + 'print workload_create_yaml')
+  print(yml_string)
   tmp = write_temporary_file(yml_string)
   command = f'kubectl apply -f {str(tmp.file.name)}'
 
