@@ -2057,7 +2057,7 @@ def get_main_container(args, system, docker_image, command, resource_type) -> st
                 - bash
                 - -c
                 - |
-                  echo XPK Start: $(date) ; {command} ; EXIT_CODE=$? ; echo XPK End: $(date); echo EXIT_CODE=$EXIT_CODE ; sleep 5; exit $EXIT_CODE
+                  echo XPK Start: $(date) ; {command}
                 resources:
                   limits:
                     {resource_type}: {system.chips_per_vm}
