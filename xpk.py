@@ -506,7 +506,7 @@ UserFacingNameToSystemCharacteristics = {
       '12x12x28', 1008, 'tpu-v5p-slice', 'ct5p-hightpu-4t', 4, AcceleratorType['TPU'], 'v5p-8064'
     ),
     'v5p-8192': SystemCharacteristics(
-      '16x16x16', 1024, 'tpu-v5p-slice', 'ct5p-hightpu-4t', 4, AcceleratorType['TPU'], 'v5p-8192'
+      '8x16x32', 1024, 'tpu-v5p-slice', 'ct5p-hightpu-4t', 4, AcceleratorType['TPU'], 'v5p-8192'
     ),
     'v5p-8320': SystemCharacteristics(
       '4x20x52', 1040, 'tpu-v5p-slice', 'ct5p-hightpu-4t', 4, AcceleratorType['TPU'], 'v5p-8320'
@@ -584,10 +584,22 @@ UserFacingNameToSystemCharacteristics = {
       '4x20x76', 1520, 'tpu-v5p-slice', 'ct5p-hightpu-4t', 4, AcceleratorType['TPU'], 'v5p-12160'
     ),
     'v5p-12288': SystemCharacteristics(
-      '16x16x24', 1536, 'tpu-v5p-slice', 'ct5p-hightpu-4t', 4, AcceleratorType['TPU'], 'v5p-12288'
+      '8x24x32', 1536, 'tpu-v5p-slice', 'ct5p-hightpu-4t', 4, AcceleratorType['TPU'], 'v5p-12288'
     ),
     'v5p-13824': SystemCharacteristics(
       '12x24x24', 1728, 'tpu-v5p-slice', 'ct5p-hightpu-4t', 4, AcceleratorType['TPU'], 'v5p-13824'
+    ),
+    'v5p-14080': SystemCharacteristics(
+      '8x20x44', 1760, 'tpu-v5p-slice', 'ct5p-hightpu-4t', 4, AcceleratorType['TPU'], 'v5p-14080'
+    ),
+    'v5p-14592': SystemCharacteristics(
+      '8x12x76', 1824, 'tpu-v5p-slice', 'ct5p-hightpu-4t', 4, AcceleratorType['TPU'], 'v5p-14592'
+    ),
+    'v5p-14848': SystemCharacteristics(
+      '8x16x58', 1856, 'tpu-v5p-slice', 'ct5p-hightpu-4t', 4, AcceleratorType['TPU'], 'v5p-14848'
+    ),
+    'v5p-15360': SystemCharacteristics(
+      '12x16x40',1920, 'tpu-v5p-slice', 'ct5p-hightpu-4t', 4, AcceleratorType['TPU'], 'v5p-15360'
     ),
     'v5p-17920': SystemCharacteristics(
       '16x20x28', 2240, 'tpu-v5p-slice', 'ct5p-hightpu-4t', 4, AcceleratorType['TPU'], 'v5p-17920'
@@ -1043,7 +1055,7 @@ def run_gke_cluster_create_command(args) -> int:
   command = (
       'gcloud beta container clusters create'
       f' {args.cluster} --release-channel rapid --enable-autoscaling'
-      ' --total-min-nodes 1 --total-max-nodes 1000 --num-nodes 6'
+      ' --total-min-nodes 1 --total-max-nodes 1000 --num-nodes 15'
       f' --node-locations={args.zone}'
       f' --project={args.project} --region={zone_to_region(args.zone)}'
       f' --cluster-version={args.gke_version} --location-policy=BALANCED'
