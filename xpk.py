@@ -1745,6 +1745,10 @@ def run_gke_node_pool_create_command(args, system) -> int:
           f' --cluster={args.cluster} --project={args.project}'
           f' --machine-type={system.gce_machine_type}'
           f' --num-nodes={args.num_slices}'
+          f' --host-maintenance-interval=PERIODIC'
+          f' --reservation-affinity=specific'
+          f' --placement-policy  gsupercomputerhighperf'
+          f' --reservation=gsupercomputerhighperf'
           f' --accelerator="type={system.gke_accelerator},count={str(system.chips_per_vm)}"'
           f' --additional-node-network network={args.cluster}-net-1,subnetwork={args.cluster}-sub-1'
           f' --additional-node-network network={args.cluster}-net-2,subnetwork={args.cluster}-sub-2'
@@ -1753,6 +1757,8 @@ def run_gke_node_pool_create_command(args, system) -> int:
           ' --no-enable-autoupgrade --enable-gvnic --scopes="https://www.googleapis.com/auth/cloud-platform"'
           f' {capacity_args}'
       )
+
+      print("for nvidia")
       task = f'NodepoolCreate-{node_pool_name}'
       commands.append(command)
       task_names.append(task)
