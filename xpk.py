@@ -1738,6 +1738,7 @@ def run_gke_node_pool_create_command(args, system) -> int:
     )
     node_pool_name = f'{args.cluster}-np-0'
     if node_pool_name not in existing_node_pool_names:
+      print("-------------testing ---------------")
       command = (
           'gcloud beta container node-pools create'
           f' {node_pool_name} --region={zone_to_region(args.zone)}'
@@ -1757,7 +1758,7 @@ def run_gke_node_pool_create_command(args, system) -> int:
           ' --no-enable-autoupgrade --enable-gvnic --scopes="https://www.googleapis.com/auth/cloud-platform"'
           f' {capacity_args}'
       )
-
+      print(command)
       print("for nvidia")
       task = f'NodepoolCreate-{node_pool_name}'
       commands.append(command)
