@@ -443,6 +443,31 @@ COPY . .
 WORKDIR /app
 """
 
+script_dir_dockerfile_with_gcloud_sdk ="""
+# Use Python 3.10 as the base image
+FROM python:3.10-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y curl gnupg
+
+# Add the Google Cloud SDK package repository
+RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+RUN curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
+
+# Install the Google Cloud SDK
+RUN apt-get update && apt-get install -y google-cloud-sdk
+
+# Set the default Python version to 3.10
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/local/bin/python3.10 1
+
+# Set environment variables for Google Cloud SDK and Python 3.10
+ENV PATH="/usr/local/google-cloud-sdk/bin:/usr/local/bin/python3.10:$PATH"
+
+# Copy everything from the base_docker_image
+COPY --from={base_docker_image} / /
+WORKDIR /app
+"""
+
 cluster_set_crd_yaml = """apiVersion: kueue.x-k8s.io/v1beta1
 kind: ResourceFlavor
 metadata:
@@ -3054,9 +3079,15 @@ def build_docker_image_from_base_image(args, verbose=True) -> tuple[int, str]:
   docker_image_prefix = os.getenv('USER', 'unknown')
   docker_name = f'{docker_image_prefix}-runner'
 
-  docker_file = script_dir_dockerfile.format(
-      base_docker_image=args.base_docker_image,
-  )
+  if args.install_gcloud_sdk:
+    docker_file = script_dir_dockerfile_with_gcloud_sdk.format(
+        base_docker_image=args.base_docker_image,
+    )
+  else:
+    docker_file = script_dir_dockerfile.format(
+        base_docker_image=args.base_docker_image,
+    )
+
   tmp = write_temporary_file(docker_file)
   docker_build_command = (
       f'docker build -f {str(tmp.file.name)} -t {docker_name}'
@@ -4842,6 +4873,16 @@ workload_base_docker_image_arguments.add_argument(
         ' will be added to the image.'
     ),
 )
+
+workload_base_docker_image_arguments.add_argument(
+    '--install-gcloud-sdk',
+    type=bool,
+    default=False,
+    help=(
+        f'If true, it will install gcloud sdk to {default_docker_image}.'
+    ),
+)
+
 workload_base_docker_image_arguments.add_argument(
     '--script-dir',
      type=directory_path_type,
