@@ -299,7 +299,6 @@ spec:
               nodeSelector:
                 {accelerator_label}
                 {machine_label}
-              priorityClassName: {args.priority}
               hostNetwork: true
               dnsPolicy: ClusterFirstWithHostNet
               terminationGracePeriodSeconds: {args.termination_grace_period_seconds}
@@ -318,7 +317,7 @@ spec:
                 emptyDir:
               containers:
               - name: fastrak-daemon
-                image: us-docker.pkg.dev/gce-ai-infra/gpudirect-tcpxo/tcpgpudmarxd-dev:v1.0.3
+                image: us-docker.pkg.dev/gce-ai-infra/gpudirect-tcpxo/tcpgpudmarxd-dev:v1.0.6
                 imagePullPolicy: Always
                 command:
                 - "bash"
@@ -344,6 +343,10 @@ spec:
                 ports:
                     - containerPort: 6002
                 env:
+                  - name: NCCL_FASTRAK_ENABLE_CONTROL_CHANNEL
+                    value: "0"
+                  - name: NCCL_BUFFSIZE
+                    value: "8388608"
                   - name: REPLICATED_JOB_NAME
                     valueFrom:
                       fieldRef:
@@ -3048,7 +3051,7 @@ def workload_create(args) -> int:
                                                  command=command,
                                                  accelerator_label=create_accelerator_label(system.accelerator_type, system),
                                                  machine_label=create_machine_label(system.accelerator_type, system),
-                                                 node_pool_name=f'a3plus-multi-nic',
+                                                 node_pool_name=f'np-1',
                                                  chips_per_vm=system.chips_per_vm)
   else:
     if system.accelerator_type == AcceleratorType['TPU'] and args.deploy_stacktrace_sidecar:
