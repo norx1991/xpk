@@ -293,9 +293,6 @@ spec:
                     - matchExpressions:
                       - key: cloud.google.com/gke-accelerator
                         operator: Exists
-                      - key: cloud.google.com/gke-nodepool
-                        operator: In
-                        values: [{node_pool_name}]
               nodeSelector:
                 {accelerator_label}
                 {machine_label}
@@ -401,12 +398,12 @@ metadata:
 script_dir_dockerfile = """FROM {base_docker_image}
 
 # Set the working directory in the container
-WORKDIR /app
+WORKDIR /deps
 
 # Copy all files from local workspace into docker container
 COPY . .
 
-WORKDIR /app
+WORKDIR /deps
 """
 
 cluster_set_crd_yaml = """apiVersion: kueue.x-k8s.io/v1beta1
@@ -3043,7 +3040,6 @@ def workload_create(args) -> int:
                                                  command=command,
                                                  accelerator_label=create_accelerator_label(system.accelerator_type, system),
                                                  machine_label=create_machine_label(system.accelerator_type, system),
-                                                 node_pool_name=f'{args.cluster}-np-0',
                                                  chips_per_vm=system.chips_per_vm)
   elif device_type == h150_device_type:
     yml_string = a3_plus_workload_create_yaml.format(args=args,
