@@ -143,7 +143,6 @@ kind: JobSet
 metadata:
   name: {args.workload}
   labels:
-    kueue.x-k8s.io/queue-name: multislice-queue  # Name of the LocalQueue
     xpk.google.com/workload: {args.workload}
 spec:
   failurePolicy:
@@ -170,14 +169,10 @@ spec:
                     - matchExpressions:
                       - key: cloud.google.com/gke-accelerator
                         operator: Exists
-                      - key: cloud.google.com/gke-nodepool
-                        operator: In
-                        values: [{node_pool_name}]
               nodeSelector:
                 {accelerator_label}
                 {machine_label}
                 {autoprovisioning_args}
-              priorityClassName: {args.priority}
               hostNetwork: true
               dnsPolicy: ClusterFirstWithHostNet
               terminationGracePeriodSeconds: {args.termination_grace_period_seconds}
@@ -3758,7 +3753,7 @@ def set_cluster_command(args) -> int:
   """
   command = (
       'gcloud container clusters get-credentials'
-      f' {args.cluster} --region={zone_to_region(args.zone)}'
+      f' {args.cluster} --zone={args.zone}'
       f' --project={args.project} &&'
       ' kubectl config view && kubectl config set-context --current'
       ' --namespace=default'
