@@ -4242,6 +4242,18 @@ def cluster_create(args) -> None:
   )
   if return_code != 0:
     xpk_exit(return_code)
+  
+  if system.accelerator_type == AcceleratorType['GPU']:
+    xpk_print('Setting up Network for cluster')
+    set_up_cluster_network_code = set_up_cluster_network_for_gpu(args, system)
+    if set_up_cluster_network_code != 0:
+      xpk_exit(set_up_cluster_network_code)
+
+  if system.device_type == h100_device_type:
+    xpk_print('Creating Network Config for cluster')
+    create_cluster_network_config_code = create_cluster_network_config(args)
+    if create_cluster_network_config_code != 0:
+      xpk_exit(create_cluster_network_config_code)
 
   create_cluster_command_code = create_cluster_if_necessary(
       args, gke_control_plane_version, system
@@ -4260,18 +4272,6 @@ def cluster_create(args) -> None:
     # exit if failed to create Tensorboard in Vertex AI
     if not tensorboard_config:
       xpk_exit(1)
-
-  if system.accelerator_type == AcceleratorType['GPU']:
-    xpk_print('Setting up Network for cluster')
-    set_up_cluster_network_code = set_up_cluster_network_for_gpu(args, system)
-    if set_up_cluster_network_code != 0:
-      xpk_exit(set_up_cluster_network_code)
-
-  if system.device_type == h100_device_type:
-    xpk_print('Creating Network Config for cluster')
-    create_cluster_network_config_code = create_cluster_network_config(args)
-    if create_cluster_network_config_code != 0:
-      xpk_exit(create_cluster_network_config_code)
 
   # Check the control plane version of the cluster and determine the node pool
   # version to use.
