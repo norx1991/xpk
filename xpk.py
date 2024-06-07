@@ -2601,7 +2601,7 @@ def run_gke_cluster_create_command(
       ' --total-min-nodes 1 --total-max-nodes 1000'
       f' --num-nodes {args.default_pool_cpu_num_nodes}'
       f' {args.custom_cluster_arguments}'
-      ' --release-channel rapid'
+      # ' --release-channel rapid'
   )
 
   if system.accelerator_type == AcceleratorType['GPU']:
