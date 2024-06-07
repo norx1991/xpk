@@ -2606,6 +2606,8 @@ def run_gke_cluster_create_command(
 
   if system.accelerator_type == AcceleratorType['GPU']:
     command += (
+        f'--network="{args.cluster}-net-0"'
+        f'--subnetwork="{args.cluster}-sub-0"'
         ' --enable-dataplane-v2 --enable-ip-alias'
         ' --enable-multi-networking --no-enable-autoupgrade'
     )
@@ -2641,7 +2643,7 @@ def set_up_cluster_network_for_gpu(args, system: SystemCharacteristics) -> int:
     0 if successful and 1 otherwise.
   """
   num_networks = 5 if system.device_type == h100_device_type else 9
-  for i in range(1, num_networks):
+  for i in range(0, num_networks):
     return_code = create_cluster_network(args, i)
     if return_code != 0:
       return 1
