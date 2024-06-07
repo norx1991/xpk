@@ -3483,20 +3483,13 @@ def run_gke_node_pool_create_command(
     xpk_print('Parsing capacity arguments failed!')
     return return_code
 
-  if system.accelerator_type == AcceleratorType['GPU']:
-    xpk_print(
-        f'Creating 1 node pool with {args.num_nodes} nodes of'
-        f' {system.device_type}\nUnderlyingly, we assume that means: {system}'
-    )
-    desired_node_pool_names = [f'{args.cluster}-np-0']
-  else:
-    xpk_print(
-        f'Creating {args.num_slices} node pool or pools of'
-        f' {system.device_type}\nUnderlyingly, we assume that means: {system}'
-    )
-    desired_node_pool_names = [
-        f'{args.cluster}-np-{slice_num}' for slice_num in range(args.num_slices)
-    ]
+  xpk_print(
+    f'Creating {args.num_slices} node pool or pools of'
+    f' {system.device_type}\nUnderlyingly, we assume that means: {system}'
+  )
+  desired_node_pool_names = [
+    f'{args.cluster}-np-{slice_num}' for slice_num in range(args.num_slices)
+  ]
 
   node_pools_to_remain = []
   delete_commands = []
@@ -3644,6 +3637,7 @@ def run_gke_node_pool_create_command(
             ' --additional-node-network'
             f' network={args.cluster}-net-8,subnetwork={subnet_prefix}-sub-8'
             ' --max-pods-per-node=32'
+            f' --placement-policy=gp-{node_pool_name}'
         )
     elif system.accelerator_type == AcceleratorType['CPU']:
       command += f' --num-nodes={system.vms_per_slice}'
