@@ -2607,7 +2607,7 @@ def run_gke_cluster_create_command(
   if system.accelerator_type == AcceleratorType['GPU']:
     command += (
         f'--network="{args.cluster}-net-0"'
-        f' --subnetwork="{args.cluster}-sub-0"'
+        f' --subnetwork="{args.cluster}-{zone_to_region(args.zone)}-sub-0"'
         ' --enable-dataplane-v2 --enable-ip-alias'
         ' --enable-multi-networking --no-enable-autoupgrade'
     )
