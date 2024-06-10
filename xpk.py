@@ -138,12 +138,29 @@ spec:
               {volumes}
 """
 
+gpu_scheduler_yaml = """schedulerName: {scheduler_name}
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms:
+                    - matchExpressions:
+                      - key: cloud.google.com/gke-accelerator
+                        operator: Exists
+                      - key: cloud.google.com/gke-nodepool
+                        operator: In
+                        values: [{node_pool_name}]
+              nodeSelector:
+                {accelerator_label}
+                {machine_label}
+                {autoprovisioning_args}
+              """
+
+
 gpu_workload_create_yaml = """apiVersion: jobset.x-k8s.io/v1alpha2
 kind: JobSet
 metadata:
   name: {args.workload}
   labels:
-    kueue.x-k8s.io/queue-name: multislice-queue  # Name of the LocalQueue
     xpk.google.com/workload: {args.workload}
 spec:
   failurePolicy:
@@ -161,23 +178,8 @@ spec:
               labels:
                 xpk.google.com/workload: {args.workload}
             spec:
-              schedulerName: {args.scheduler}
+              {gpu_scheduler}
               restartPolicy: Never
-              affinity:
-                nodeAffinity:
-                  requiredDuringSchedulingIgnoredDuringExecution:
-                    nodeSelectorTerms:
-                    - matchExpressions:
-                      - key: cloud.google.com/gke-accelerator
-                        operator: Exists
-                      - key: cloud.google.com/gke-nodepool
-                        operator: In
-                        values: [{node_pool_name}]
-              nodeSelector:
-                {accelerator_label}
-                {machine_label}
-                {autoprovisioning_args}
-              priorityClassName: {args.priority}
               hostNetwork: true
               dnsPolicy: ClusterFirstWithHostNet
               terminationGracePeriodSeconds: {args.termination_grace_period_seconds}
@@ -2624,110 +2626,6 @@ def run_gke_cluster_create_command(
   return 0
 
 
-def update_gke_cluster_with_clouddns(args) -> int:
-  """Run the GKE cluster update command for existing clusters and enable CloudDNS.
-
-  Args:
-    args: user provided arguments for running the command.
-
-  Returns:
-    0 if successful and 1 otherwise.
-  """
-  command = (
-      'gcloud container clusters update'
-      f' {args.cluster} --project={args.project}'
-      f' --region={zone_to_region(args.zone)}'
-      ' --cluster-dns=clouddns'
-      ' --cluster-dns-scope=vpc'
-      f' --cluster-dns-domain={args.cluster}-domain'
-      ' --quiet'
-  )
-  xpk_print('Updating GKE cluster to use Cloud DNS, may take a while!')
-  return_code = run_command_with_updates(
-      command, 'GKE Cluster Update to enable Cloud DNS', args
-  )
-  if return_code != 0:
-    xpk_print(f'GKE Cluster Update request returned ERROR {return_code}')
-    return 1
-  return 0
-
-
-def upgrade_gke_control_plane_version(args, default_rapid_gke_version) -> int:
-  """Upgrade GKE cluster's control plane version before updating nodepools to use CloudDNS.
-
-  Args:
-    args: user provided arguments for running the command.
-    default_rapid_gke_version: Rapid default version for the upgrade.
-
-  Returns:
-    0 if successful and 1 otherwise.
-  """
-  command = (
-      'gcloud container clusters upgrade'
-      f' {args.cluster} --project={args.project}'
-      f' --region={zone_to_region(args.zone)}'
-      f' --cluster-version={default_rapid_gke_version}'
-      ' --master'
-      ' --quiet'
-  )
-  xpk_print("Updating GKE cluster's control plane version, may take a while!")
-  return_code = run_command_with_updates(
-      command,
-      'GKE Cluster control plane version update to enable Cloud DNS',
-      args,
-  )
-  if return_code != 0:
-    xpk_print(
-        "GKE cluster's control plane version update request returned"
-        f' ERROR {return_code}'
-    )
-    return 1
-  return 0
-
-
-def upgrade_gke_nodepools_version(args, default_rapid_gke_version) -> int:
-  """Upgrade nodepools in the cluster to default rapid gke version. Recreates the nodes.
-
-  Args:
-    args: user provided arguments for running the command.
-    default_rapid_gke_version: Rapid default version for the upgrade.
-
-  Returns:
-    0 if successful and 1 otherwise.
-  """
-  existing_node_pool_names, return_code = get_all_nodepools_programmatic(args)
-  if return_code != 0:
-    xpk_print('Listing all node pools failed!')
-    return return_code
-
-  # Batch execution to upgrade node pools simultaneously
-  commands = []
-  task_names = []
-  for node_pool_name in existing_node_pool_names:
-    commands.append(
-        'gcloud container clusters upgrade'
-        f' {args.cluster} --project={args.project}'
-        f' --region={zone_to_region(args.zone)}'
-        f' --cluster-version={default_rapid_gke_version}'
-        f' --node-pool={node_pool_name}'
-        ' --quiet'
-    )
-    task_names.append(f'Upgrading node pool {node_pool_name}.')
-
-  for i, command in enumerate(commands):
-    xpk_print(f'To complete {task_names[i]} we are executing {command}')
-  max_return_code = run_commands(
-      commands, 'Update GKE node pools to default RAPID GKE version', task_names
-  )
-  if max_return_code != 0:
-    xpk_print(
-        'GKE node pools update to default RAPID GKE version returned ERROR:'
-        f' {max_return_code}'
-    )
-    return max_return_code
-  return 0
-
-
 def set_up_cluster_network_for_gpu(args, system: SystemCharacteristics) -> int:
   """Set up GKE Cluster networks, subnets and firewall rules for A3/A3+.
   Note: there are 4 NICs for GPU-GPU bw and 1 NIC for host in an A3 node,
@@ -3335,76 +3233,6 @@ def create_cluster_if_necessary(
     )
 
 
-def is_cluster_using_clouddns(args) -> bool:
-  """Checks if cluster is using CloudDNS.
-  Args:
-    args: user provided arguments for running the command.
-
-  Returns:
-    True if cluster is using CloudDNS and False otherwise.
-  """
-  command = (
-      f'gcloud container clusters describe {args.cluster}'
-      f' --project={args.project} --region={zone_to_region(args.zone)}'
-      ' | grep "clusterDns: CLOUD_DNS" | wc -l'
-  )
-  return_code, cloud_dns_matches = run_command_for_value(
-      command,
-      'Check if Cloud DNS is enabled in cluster describe.',
-      args,
-  )
-  if return_code != 0:
-    xpk_exit(return_code)
-  cloud_dns_matches = int(cloud_dns_matches)
-  if cloud_dns_matches > 0:
-    xpk_print('Cloud DNS is enabled on the cluster, no update needed.')
-    return True
-  return False
-
-
-def update_cluster_with_clouddns_if_necessary(args) -> int:
-  """Updates a GKE cluster to use CloudDNS, if not enabled already.
-
-  Args:
-    args: user provided arguments for running the command.
-
-  Returns:
-    0 if successful and error code otherwise.
-  """
-  all_clusters, return_code = get_all_clusters_programmatic(args)
-  if return_code > 0:
-    xpk_print('Listing all clusters failed!')
-    return 1
-  if args.cluster in all_clusters:
-    # If cluster is already using clouddns, no update necessary!
-    if is_cluster_using_clouddns(args):
-      return 0
-    cluster_update_return_code = update_gke_cluster_with_clouddns(args)
-    if cluster_update_return_code > 0:
-      xpk_print('Updating GKE cluster to use CloudDNS failed!')
-      return cluster_update_return_code
-
-    # Find default rapid control plane version and update the control plane to the same.
-    server_config_return_code, gke_server_config = get_gke_server_config(args)
-    if server_config_return_code != 0:
-      xpk_exit(server_config_return_code)
-    upgrade_master_return_code = upgrade_gke_control_plane_version(
-        args, gke_server_config.default_rapid_gke_version
-    )
-    if upgrade_master_return_code > 0:
-      xpk_print("Updating GKE cluster's control plane upgrade failed!")
-      return upgrade_master_return_code
-
-    # Upgrade nodepools version after the master upgrade.
-    node_pool_update_code = upgrade_gke_nodepools_version(
-        args, gke_server_config.default_rapid_gke_version
-    )
-    if node_pool_update_code > 0:
-      xpk_print('Upgrading nodepools version failed!')
-      return node_pool_update_code
-  return 0
-
-
 def get_nodepool_zone(args, nodepool_name) -> tuple[int, str]:
   """Return zone in which nodepool exists in the cluster.
 
@@ -3658,7 +3486,7 @@ def run_gke_node_pool_create_command(
         f'Creating 1 node pool with {args.num_nodes} nodes of'
         f' {system.device_type}\nUnderlyingly, we assume that means: {system}'
     )
-    desired_node_pool_names = [f'{args.cluster}-np-0']
+    desired_node_pool_names = [f'np-1']
   else:
     xpk_print(
         f'Creating {args.num_slices} node pool or pools of'
@@ -3919,7 +3747,8 @@ def set_cluster_command(args) -> int:
   """
   command = (
       'gcloud container clusters get-credentials'
-      f' {args.cluster} --region={zone_to_region(args.zone)}'
+      # f' {args.cluster} --region={zone_to_region(args.zone)}'
+      f' {args.cluster} --zone={args.zone}'
       f' --project={args.project} &&'
       ' kubectl config view && kubectl config set-context --current'
       ' --namespace=default'
@@ -4424,14 +4253,6 @@ def cluster_create(args) -> None:
   )
   if create_cluster_command_code != 0:
     xpk_exit(create_cluster_command_code)
-
-  # Update Pathways clusters with CloudDNS if not enabled already.
-  if args.enable_pathways:
-    update_cluster_command_code = update_cluster_with_clouddns_if_necessary(
-        args
-    )
-    if update_cluster_command_code != 0:
-      xpk_exit(update_cluster_command_code)
 
   set_cluster_command_code = set_cluster_command(args)
   if set_cluster_command_code != 0:
@@ -5030,7 +4851,7 @@ def get_main_container(args, system, docker_image, resource_type) -> str:
     )
 
   xpk_return_user_exit_code = ''
-  if args.restart_on_user_code_failure:
+  if not args.use_pathways and args.restart_on_user_code_failure:
     if int(args.max_restarts) <= 0:
       xpk_print(
           f'Warning: --max-restarts, is set to {args.max_restarts}. Will not'
@@ -5249,38 +5070,6 @@ def get_pathways_expected_tpu_type(device_type: str) -> str:
   return pathways_expected_instance
 
 
-def get_rm_address(args) -> str:
-  """Generates the Pathways resource manager address based on whether CloudDNS is enabled or not.
-  Args:
-    args: user provided arguments for running the command.
-
-  Returns:
-    str: Fully qualified RM address.
-  """
-  suffix = ''
-  if is_cluster_using_clouddns(args):
-    suffix = f'.default.svc.{args.cluster}-domain.'
-  rm_address = f'{args.workload}-rm-0-0.{args.workload}{suffix}:38677'
-  return rm_address
-
-
-def get_proxy_address(args) -> str:
-  """Generates the Pathways proxy address based on whether CloudDNS is enabled or not.
-  Args:
-    args: user provided arguments for running the command.
-
-  Returns:
-    str: Fully qualified proxy address.
-  """
-  suffix = ''
-  if is_cluster_using_clouddns(args):
-    suffix = f'.default.svc.{args.cluster}-domain.'
-  proxy_address = (
-      f'grpc://{args.workload}-proxy-0-0.{args.workload}{suffix}:38676'
-  )
-  return proxy_address
-
-
 def get_pathways_worker_args(args) -> str:
   """Arguments for the Pathways workers.
   Args:
@@ -5291,7 +5080,7 @@ def get_pathways_worker_args(args) -> str:
   """
   yaml = """- --alsologtostderr
               - --pathways_server_port=38677
-              - --pathways_resource_manager={rm_address}
+              - --pathways_resource_manager={args.workload}-rm-0-0.{args.workload}.default.svc.{args.cluster}-domain.:38677
               - --pathways_persistent_compilation_cache=false
               - --pathways_compilation_mode=compile_at_worker
               - --xla_tpu_enable_data_parallel_all_reduce_opt=true
@@ -5303,7 +5092,7 @@ def get_pathways_worker_args(args) -> str:
               - --xla_enable_async_all_gather=true
               - --pathways_tmp_dir_pattern={args.pathways_gcs_location}"""
   if args.use_pathways:
-    return yaml.format(args=args, rm_address=get_rm_address(args))
+    return yaml.format(args=args)
   else:
     return ''
 
@@ -5318,13 +5107,12 @@ def get_pathways_proxy_args(args) -> str:
   """
   yaml = """- --alsologtostderr
               - --v=0
-              - --pathways_ifrt_proxy_server_resource_manager={rm_address}
+              - --pathways_ifrt_proxy_server_resource_manager={args.workload}-rm-0-0.{args.workload}.default.svc.{args.cluster}-domain.:38677
               - --pathways_ifrt_proxy_server_port=38676
               - --pathways_tmp_dir_pattern={args.pathways_gcs_location}
               - --pathways_plaque_network=gcp"""
-
   if args.use_pathways:
-    return yaml.format(args=args, rm_address=get_rm_address(args))
+    return yaml.format(args=args)
   else:
     return ''
 
@@ -5403,11 +5191,17 @@ def get_user_workload_for_pathways(args, system: SystemCharacteristics) -> str:
                 path: /tmp
                 type: DirectoryOrCreate
               name: shared-tmp"""
-  if args.headless:
-    return ''
-  else:
+  if args.use_pathways and not args.headless:
+    if not args.command:
+      xpk_print(
+          'Please provide a command, if you wish to use Pathways with a docker'
+          ' container.'
+      )
+      xpk_exit(1)
     container, _ = get_user_workload_container(args, system)
     return user_workload_yaml.format(args=args, container=container)
+  else:
+    return ''
 
 
 def get_env_container(args, system: SystemCharacteristics):
@@ -5918,6 +5712,37 @@ def get_autoprovisioning_node_selector_args(args) -> tuple[str, int]:
   return node_selector_args, return_code
 
 
+def get_gpu_scheduler(
+    args, system: SystemCharacteristics, autoprovisioning_args: str
+) -> str:
+  """Get gpu scheduler configuration.
+
+  Args:
+    args: user provided arguments for running the command.
+    system: system characteristics.
+    autoprovisioning_args: a string of arguments for Autoprovisioning.
+
+  Returns:
+    str: yaml containing gpu scheduler configuration
+  """
+  if args.scheduler == 'gke.io/topology-aware-auto':
+    gpu_scheduler = f"""schedulingGates:
+              - name: "{args.scheduler}-{args.workload}"
+              """
+  else:
+    gpu_scheduler = gpu_scheduler_yaml.format(
+        scheduler_name=args.scheduler,
+        accelerator_label=create_accelerator_label(
+            system.accelerator_type, system
+        ),
+        machine_label=create_machine_label(system.accelerator_type, system),
+        node_pool_name=f'np-1',
+        autoprovisioning_args=autoprovisioning_args,
+    )
+
+  return gpu_scheduler
+
+
 def get_gpu_volume(system: SystemCharacteristics) -> str:
   """Get gpu volume based on user provided arguments.
 
@@ -5971,7 +5796,7 @@ def get_gpu_rxdm_image(system: SystemCharacteristics) -> str:
                 image: us-docker.pkg.dev/gce-ai-infra/gpudirect-tcpx/tcpgpudmarxd-dev:v2.0.9"""
   elif system.device_type == h100_mega_device_type:
     gpu_rxdm_image = """- name: fastrak-daemon
-                image: us-docker.pkg.dev/gce-ai-infra/gpudirect-tcpxo/tcpgpudmarxd-dev:v1.0.6-sctp"""
+                image: us-docker.pkg.dev/gce-ai-infra/gpudirect-tcpxo/tcpgpudmarxd-dev:v1.0.8"""
   return gpu_rxdm_image
 
 
@@ -6038,11 +5863,12 @@ def workload_create(args) -> None:
     0 if successful and 1 otherwise.
   """
   add_zone_and_project(args)
-
-  if args.headless and not is_cluster_using_clouddns(args):
+  if args.command is None and not args.headless:
     xpk_print(
-        'Please run xpk cluster create-pathways first, to upgrade and enable'
-        ' CloudDNS on your cluster.'
+        'Please provide a command using "--command" for the docker container to'
+        ' execute. Command is not required if you wish to run Pathways'
+        ' workloads in headless mode (`xpk workload create-pathways'
+        ' --headless`).'
     )
     xpk_exit(1)
 
@@ -6050,14 +5876,6 @@ def workload_create(args) -> None:
   if set_cluster_command_code != 0:
     xpk_exit(set_cluster_command_code)
 
-  workload_exists = check_if_workload_exists(args)
-
-  if workload_exists:
-    xpk_print(
-        f'{args.workload} already exists, XPK will not create this workload.'
-        ' Please pick a new workload name'
-    )
-    xpk_exit(1)
 
   xpk_print('Starting workload create', flush=True)
   system, return_code = get_system_characteristics(args)
@@ -6066,34 +5884,8 @@ def workload_create(args) -> None:
     xpk_print('Fetching system characteristics failed!')
     xpk_exit(return_code)
 
-  if not check_if_workload_can_schedule(args, system):
-    xpk_exit(1)
-
   xpk_print('Starting workload create', flush=True)
 
-  metadata_configmap_name = f'{args.cluster}-{_CLUSTER_METADATA_CONFIGMAP}'
-  cluster_config_map = get_cluster_configmap(args, metadata_configmap_name)
-  cluster_xpk_version = None
-  if cluster_config_map is None:
-    xpk_print(
-        f'Warning: Unable to find ConfigMap: {metadata_configmap_name} for the'
-        ' cluster. We recommend to upgrade your cluster by running `xpk'
-        ' cluster create`.'
-    )
-  else:
-    cluster_xpk_version = cluster_config_map.get('xpk_version')
-  if (
-      cluster_xpk_version is not None
-      and cluster_xpk_version != xpk_current_version
-  ):
-    xpk_print(
-        'Warning: Cluster has been created using XPK version:'
-        f' {cluster_config_map["xpk_version"]} but the XPK version you are'
-        f' using to schedule workload is: {xpk_current_version}. Some features'
-        ' might not be available for this cluster. We recommend to'
-        ' upgrade/downgrade your XPK version or cluster by running `xpk'
-        ' cluster create`.'
-    )
 
   debugging_dashboard_id = None
 
@@ -6130,21 +5922,35 @@ def workload_create(args) -> None:
         args=args,
         container=container,
         command=args.command,
-        accelerator_label=create_accelerator_label(
-            system.accelerator_type, system
-        ),
-        machine_label=create_machine_label(system.accelerator_type, system),
-        node_pool_name=f'{args.cluster}-np-0',
         chips_per_vm=system.chips_per_vm,
-        autoprovisioning_args=autoprovisioning_args,
+        gpu_scheduler=get_gpu_scheduler(args, system, autoprovisioning_args),
         gpu_volume=get_gpu_volume(system),
         gpu_rxdm_image=get_gpu_rxdm_image(system),
         gpu_rxdm_cmd=get_gpu_rxdm_cmd(system),
         gpu_tcp_volume=get_gpu_tcp_volume(system),
     )
-  elif args.use_pathways and ensure_pathways_workload_prerequisites(
-      args, system
-  ):
+  elif args.use_pathways:
+    # Ensure the cluster and CPU nodepools were created with create-pathways
+    all_node_pools = get_all_nodepools_programmatic(args)
+    desired_pw_cpu_node_pools = {'cpu-user-np', 'cpu-rm-np', 'cpu-proxy-np'}
+    if not desired_pw_cpu_node_pools.issubset(set(all_node_pools[0])):
+      xpk_print(
+          'Cluster needs to be created with `xpk create-pathways` to run'
+          ' Pathways workloads.'
+      )
+      xpk_exit(1)
+
+    # Ensure device type is TPUs - currently Pathways supports TPUs only.
+    if system.accelerator_type != AcceleratorType['TPU']:
+      xpk_print('Currently, Pathways workloads can only be run on TPUs.')
+      xpk_exit(1)
+
+    # Set proxy address to be consumed in helper methods and displayed to user.
+    args.pathways_proxy_address = f'grpc://{args.workload}-proxy-0-0.{args.workload}.default.svc.{args.cluster}-domain.:38676'
+
+    # Set the job which determines the life of other Pathways jobs
+    args.targetReplicatedJob = 'proxy' if args.headless else 'main'
+
     yml_string = pw_workload_create_yaml.format(
         args=args,
         system=system,
@@ -6237,53 +6043,6 @@ def workload_create(args) -> None:
     )
 
   xpk_exit(0)
-
-
-def ensure_pathways_workload_prerequisites(args, system) -> bool:
-  """Check all Pathways workload prerequisites and set necessary args.
-
-  Args:
-    args: user provided arguments for running the command.
-    system: system characteristics.
-
-  Returns:
-    True once conditions satisfy and variables are set. Exits otherwise.
-  """
-  # Ensure command is provided if not using Pathways in headless mode
-  if args.command is None and not args.headless:
-    xpk_print(
-        'Please provide a command using "--command" for the docker container to'
-        ' execute. Command is not required if you wish to run Pathways'
-        ' workloads in headless mode (`xpk workload create-pathways'
-        ' --headless`).'
-    )
-    xpk_exit(1)
-
-  # Ensure the cluster and CPU nodepools were created with create-pathways
-  all_node_pools = get_all_nodepools_programmatic(args)
-  desired_pw_cpu_node_pools = {'cpu-user-np', 'cpu-rm-np', 'cpu-proxy-np'}
-  if not desired_pw_cpu_node_pools.issubset(set(all_node_pools[0])):
-    xpk_print(
-        'Cluster needs to be created with `xpk create-pathways` to run'
-        ' Pathways workloads.'
-    )
-    xpk_exit(1)
-
-  # Ensure device type is TPUs - currently Pathways supports TPUs only.
-  if system.accelerator_type != AcceleratorType['TPU']:
-    xpk_print('Currently, Pathways workloads can only be run on TPUs.')
-    xpk_exit(1)
-
-  # Set proxy address to be consumed in helper methods and displayed to user.
-  args.pathways_proxy_address = get_proxy_address(args)
-
-  # Set the job which determines the life of other Pathways jobs
-  args.targetReplicatedJob = 'proxy' if args.headless else 'main'
-
-  # Always report user code failures back to JobSet.
-  args.restart_on_user_code_failure = True
-
-  return True
 
 
 def workload_delete(args) -> None:
@@ -7230,17 +6989,6 @@ def add_shared_workload_create_optional_arguments(args_parsers):
         ),
     )
     custom_parser.add_argument(
-        '--restart-on-user-code-failure',
-        action='store_true',
-        help=(
-            'Adding this argument will return user failures back to the jobset'
-            ' manager allowing restarts on user code when --max-restarts is set'
-            ' greater than 0. By default, this is not enabled, and workloads'
-            ' will not restart from user code failures. This is enabled by'
-            ' default on Pathways workloads.'
-        ),
-    )
-    custom_parser.add_argument(
         '--headless',
         action='store_true',
         help=(
@@ -7826,9 +7574,11 @@ workload_create_parser_optional_arguments.add_argument(
     type=str,
     default='default-scheduler',
     help=(
-        'Which scheduler you want to use. Defaults to `default-scheduler`.'
-        'If your cluster is configured for high throughput scheduling you might'
-        'want to use `gke.io/high-throughput-scheduler`.'
+        'Which scheduler you want to use. Defaults to `default-scheduler`. If'
+        ' your cluster is configured for high throughput scheduling, you might'
+        ' want to use `gke.io/high-throughput-scheduler`.If your cluster is'
+        ' configured for topology-aware scheduling, you might want to use'
+        ' `gke.io/topology-aware-auto`.'
     ),
 )
 workload_create_parser_optional_arguments.add_argument(
@@ -7847,6 +7597,16 @@ workload_create_parser_optional_arguments.add_argument(
         'Add this argument to deploy a sidecar container that will '
         'read the stack traces collected in /tmp/debugging directory '
         'and forward them to Cloud Logging for TPU workloads.'
+    ),
+)
+workload_create_parser_optional_arguments.add_argument(
+    '--restart-on-user-code-failure',
+    action='store_true',
+    help=(
+        'Adding this argument will return user failures back to the jobset'
+        ' manager allowing restarts on user code when --max-restarts is set'
+        ' greater than 0. By default, this is not enabled, and workloads will'
+        ' not restart from user code failures.'
     ),
 )
 
